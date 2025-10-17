@@ -457,29 +457,12 @@ class ProductionDataProfiler:
             json.dump(self.results, f, indent=2, ensure_ascii=False, cls=DecimalEncoder)
         print(f"\n✓ analysis results saved to: {output_path}")
     
-    def generate_summary_report(self) -> str:
-        """generate analysis summary report"""
-        report = [
-            "\n" + "="*60 + " data analysis summary report" + "="*60,
-            f"\nanalysis time: {self.results['metadata']['analysis_date']}",
-            f"database: {self.results['metadata']['database']}",
-            f"\nanalyze {len(self.results['tables'])} tables\n"
-        ]
-
-        for table_name, table_data in self.results['tables'].items():
-            report.append(f"\ntable: {table_name}")
-            report.append(f"  - column count: {table_data['column_count']}")
-        
-        report.append("\n" + "="*60)
-        return "\n".join(report)
-    
     def run(self, output_file: str = 'production_data_profile.json'):
         """execute complete analysis process"""
         try:
             self.connect()
             self.analyze_all_tables()
             self.save_results(output_file)
-            print(self.generate_summary_report())
         except Exception as e:
             print(f"\n✗ analyze process failed: {e}")
             raise
@@ -492,7 +475,7 @@ def main():
     # read configuration from environment variables
     config = {
         'host': os.getenv('DB_HOST', 'localhost'),
-        'port': int(os.getenv('DB_PORT', '3306')),
+        'port': int(os.getenv('DB_PORT', '9030')),
         'user': os.getenv('DB_USER', 'root'),
         'password': os.getenv('DB_PASSWORD', ''),
         'database': os.getenv('DB_NAME', 'tenant'),

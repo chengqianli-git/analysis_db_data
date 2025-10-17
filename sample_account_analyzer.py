@@ -468,26 +468,34 @@ class SampleAccountAnalyzer:
             print(f"  - sample account size: {stats['account_person']['sample_size']}")
             print(f"  - average persons per account: {stats['account_person']['avg_persons_per_account']}")
             print(f"  - standard deviation: {stats['account_person']['std_persons_per_account']}")
-            print(f"  - range: {stats['account_person']['min_persons_per_account']} - {stats['account_person']['max_persons_per_account']}")
+            print(f"  - person count range: {stats['account_person']['min_persons_per_account']} - {stats['account_person']['max_persons_per_account']}")
         
         if 'account_activity' in stats:
             print(f"\naccount-activity relationship (last {self.activity_time_range_days} days):")
             print(f"  - sample account size: {stats['account_activity']['sample_size']}")
             print(f"  - activities per account: {stats['account_activity']['avg_activities_per_account']}")
             print(f"  - standard deviation: {stats['account_activity']['std_activities_per_account']}")
-            print(f"  - range: {stats['account_activity']['min_activities_per_account']} - {stats['account_activity']['max_activities_per_account']}")
+            print(f"  - activity count range: {stats['account_activity']['min_activities_per_account']} - {stats['account_activity']['max_activities_per_account']}")
         
         if 'person_activity' in stats:
             print(f"\nperson-activity relationship (last {self.activity_time_range_days} days):")
             print(f"  - sample person size: {stats['person_activity']['sample_persons']}")
             print(f"  - average activities per person: {stats['person_activity']['avg_activities_per_person']}")
             print(f"  - standard deviation: {stats['person_activity']['std_activities_per_person']}")
+            print(f"  - activity count range: {stats['person_activity']['min_activities_per_person']} - {stats['person_activity']['max_activities_per_person']}")
         
         if 'account_list' in stats:
             print(f"\naccount-list membership relationship:")
             print(f"  - sample account size: {stats['account_list']['sample_size']}")
             print(f"  - average lists per account: {stats['account_list']['avg_lists_per_account']}")
             print(f"  - accounts not in lists: {stats['account_list']['accounts_not_in_lists']} accounts")
+            print(f"  - list count range: {stats['account_list']['min_lists_per_account']} - {stats['account_list']['max_lists_per_account']}")
+
+        if 'activity_types' in stats:
+            print(f"\nactivity type distribution:")
+            print(f"  - total types: {stats['activity_types']['total_types']}")
+            for type in stats['activity_types']['activity_type_distribution']:
+                print(f"  - {type['type_category']}: {type['count']} ({type['percentage']}%)")
         
         print("\n" + "="*80)
 
@@ -515,9 +523,7 @@ def main():
     print("="*80)
     print("sample account relationship analyzer")
     print("="*80)
-    print("\n特点:")
-    print("  - only analyze specified sample accounts, avoid big table JOIN")
-    print("  - use IN clause to precisely locate, high performance")
+    print("\nfeatures:")
     print("  - can random sample or specify account IDs")
     
     analyzer = SampleAccountAnalyzer(config)
