@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Sample Account Analyzer - 分析指定账户的关联关系
+Sample Account Analyzer - analyze the relationship of specified accounts
 """
 
 import json
 import os
 from decimal import Decimal
+import traceback
 from typing import Dict, List, Any
 import pymysql
 from pymysql.cursors import DictCursor
-import random
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -21,18 +21,18 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 class SampleAccountAnalyzer:
-    """基于样本账户的关系分析器"""
+    """sample account relationship analyzer"""
     
     def __init__(self, config: Dict[str, Any]):
         """
-        初始化分析器
-        :param config: 数据库连接配置
+        initialize analyzer
+        :param config: database connection configuration
         """
         self.config = config
         self.connection = None
-        self.sample_size = config.get('sample_size', 50)  # 默认50个样本
+        self.sample_size = config.get('sample_size', 50)  # default 50 accounts
         self.activity_time_range_days = config.get('activity_time_range_days', 90)
-        self.account_ids = config.get('account_ids', [])  # 可以指定具体的account_id列表
+        self.account_ids = config.get('account_ids', [])  # optional: specify specific account IDs, leave blank for random sampling
         
         self.results = {
             'metadata': {
@@ -46,7 +46,7 @@ class SampleAccountAnalyzer:
         }
     
     def connect(self):
-        """连接数据库"""
+        """connect to database"""
         try:
             self.connection = pymysql.connect(
                 host=self.config['host'],
@@ -56,61 +56,52 @@ class SampleAccountAnalyzer:
                 database=self.config['database'],
                 cursorclass=DictCursor
             )
-            print(f"✓ 已连接到数据库: {self.config['database']}")
+            print(f"✓ connect to database: {self.config['database']}")
         except Exception as e:
-            print(f"✗ 数据库连接失败: {e}")
+            print(f"✗ connect to database failed: {e}")
             raise
     
     def close(self):
-        """关闭数据库连接"""
+        """close database connection"""
         if self.connection:
             self.connection.close()
     
     def execute_query(self, query: str) -> List[Dict]:
-        """执行SQL查询"""
+        """execute SQL query"""
         try:
             with self.connection.cursor() as cursor:
                 cursor.execute(query)
                 return cursor.fetchall()
         except Exception as e:
-            print(f"✗ 查询执行失败: {e}")
+            print(f"✗ execute query failed: {e}")
             print(f"SQL: {query[:200]}...")
             return []
     
     def get_sample_account_ids(self) -> List[int]:
         """
-        获取样本账户ID
-        方法1：如果指定了account_ids，使用指定的
-        方法2：如果没有指定，随机采样
+        get sample account IDs
+        method 1: if specified, use specified account IDs, ignore sample size
+        method 2: if not specified, random sample
         """
         if self.account_ids:
-            print(f"使用指定的 {len(self.account_ids)} 个账户ID")
+            print(f"use specified {len(self.account_ids)} account IDs")
             return self.account_ids
         
-        # 随机采样账户
-        print(f"从account_base表中随机采样 {self.sample_size} 个账户...")
+        print(f"random sample {self.sample_size} accounts from account_base table")
         
-        query = f"""
-        SELECT id
-        FROM account_base
-        ORDER BY RAND()
-        LIMIT {self.sample_size}
-        """
-        
+        query = f"SELECT id FROM account_base ORDER BY RAND() LIMIT {self.sample_size}"
         result = self.execute_query(query)
         account_ids = [row['id'] for row in result]
         
-        print(f"✓ 已获取 {len(account_ids)} 个样本账户ID")
+        print(f"✓ get {len(account_ids)} sample account IDs")
         return account_ids
     
     def analyze_account_person_counts(self, account_ids: List[int]) -> Dict:
         """
-        分析指定账户的人员数量
-        使用 IN 子句，避免大表JOIN
+        analyze the number of persons in specified accounts
         """
-        print(f"\n分析 {len(account_ids)} 个账户的人员关系...")
+        print(f"\nanalyze {len(account_ids)} accounts' person relationship...")
         
-        # 将account_ids转换为SQL IN子句
         ids_str = ','.join(str(id) for id in account_ids)
         
         query = f"""
@@ -124,16 +115,16 @@ class SampleAccountAnalyzer:
         
         result = self.execute_query(query)
         
-        # 构建每个账户的统计
+        # build statistics for each account
         account_person_map = {row['account_id']: row['person_count'] for row in result}
         
-        # 包含0个人员的账户
+        # accounts with 0 persons
         person_counts = []
         for aid in account_ids:
             count = account_person_map.get(aid, 0)
             person_counts.append(count)
         
-        # 计算聚合统计
+        # calculate aggregated statistics
         stats = {
             'sample_size': len(account_ids),
             'accounts_with_persons': len([c for c in person_counts if c > 0]),
@@ -145,7 +136,7 @@ class SampleAccountAnalyzer:
             'std_persons_per_account': round(self._calculate_std(person_counts), 2) if person_counts else 0
         }
         
-        # 分桶统计
+        # bucket statistics
         buckets = self._create_buckets(
             person_counts,
             [(0, 0), (1, 5), (6, 10), (11, 20), (21, 50), (51, 100), (101, 500), (501, float('inf'))],
@@ -153,17 +144,16 @@ class SampleAccountAnalyzer:
         )
         stats['person_count_buckets'] = buckets
         
-        print(f"  ✓ 平均每个账户 {stats['avg_persons_per_account']} 个人员")
-        print(f"  ✓ {stats['accounts_without_persons']} 个账户没有人员")
+        print(f"  ✓ average {stats['avg_persons_per_account']} persons per account")
+        print(f"  ✓ {stats['accounts_without_persons']} accounts without persons")
         
         return stats
     
     def analyze_account_activity_counts(self, account_ids: List[int]) -> Dict:
         """
-        分析指定账户的活动数量（最近90天）
-        使用 IN 子句，避免大表JOIN
+        analyze the number of activities in specified accounts
         """
-        print(f"\n分析 {len(account_ids)} 个账户的活动关系（最近{self.activity_time_range_days}天）...")
+        print(f"\nanalyze {len(account_ids)} accounts' activity relationship (last {self.activity_time_range_days} days)...")
         
         ids_str = ','.join(str(id) for id in account_ids)
         
@@ -179,16 +169,16 @@ class SampleAccountAnalyzer:
         
         result = self.execute_query(query)
         
-        # 构建每个账户的统计
+        # build statistics for each account
         account_activity_map = {row['account_id']: row['activity_count'] for row in result}
         
-        # 包含0个活动的账户
+        # accounts with 0 activities
         activity_counts = []
         for aid in account_ids:
             count = account_activity_map.get(aid, 0)
             activity_counts.append(count)
         
-        # 计算聚合统计
+        # calculate aggregated statistics
         stats = {
             'sample_size': len(account_ids),
             'accounts_with_activities': len([c for c in activity_counts if c > 0]),
@@ -201,7 +191,7 @@ class SampleAccountAnalyzer:
             'time_range_days': self.activity_time_range_days
         }
         
-        # 分桶统计
+        # bucket statistics
         buckets = self._create_buckets(
             activity_counts,
             [(0, 0), (1, 10), (11, 50), (51, 100), (101, 500), (501, 1000), (1001, 5000), (5001, float('inf'))],
@@ -209,20 +199,20 @@ class SampleAccountAnalyzer:
         )
         stats['activity_count_buckets'] = buckets
         
-        print(f"  ✓ 平均每个账户 {stats['avg_activities_per_account']} 个活动")
-        print(f"  ✓ {stats['accounts_without_activities']} 个账户没有活动")
+        print(f"  ✓ average {stats['avg_activities_per_account']} activities per account")
+        print(f"  ✓ {stats['accounts_without_activities']} accounts without activities")
         
         return stats
     
     def analyze_person_activity_counts(self, account_ids: List[int]) -> Dict:
         """
-        分析指定账户下人员的活动数量
+        analyze the number of activities in specified accounts
         """
-        print(f"\n分析样本账户下人员的活动关系（最近{self.activity_time_range_days}天）...")
+        print(f"\nanalyze {len(account_ids)} accounts' person activity relationship (last {self.activity_time_range_days} days)...")
         
         ids_str = ','.join(str(id) for id in account_ids)
         
-        # 先获取这些账户下的所有person_id
+        # get all person_ids in the specified accounts
         person_query = f"""
         SELECT id as person_id
         FROM person_norm
@@ -232,12 +222,12 @@ class SampleAccountAnalyzer:
         person_ids = [row['person_id'] for row in person_result]
         
         if not person_ids:
-            print("  ⚠️  样本账户下没有人员")
+            print("  ⚠️  no persons in the sample accounts")
             return {}
         
-        print(f"  找到 {len(person_ids)} 个人员")
+        print(f"  ✓ found {len(person_ids)} persons")
         
-        # 查询这些人员的活动数量
+        # query the number of activities for these persons
         person_ids_str = ','.join(str(id) for id in person_ids)
         
         query = f"""
@@ -252,7 +242,7 @@ class SampleAccountAnalyzer:
         
         result = self.execute_query(query)
         
-        # 构建统计
+        # build statistics for each person
         person_activity_map = {row['person_id']: row['activity_count'] for row in result}
         
         activity_counts = []
@@ -260,7 +250,7 @@ class SampleAccountAnalyzer:
             count = person_activity_map.get(pid, 0)
             activity_counts.append(count)
         
-        # 计算聚合统计
+        # calculate aggregated statistics
         stats = {
             'sample_persons': len(person_ids),
             'persons_with_activities': len([c for c in activity_counts if c > 0]),
@@ -273,7 +263,7 @@ class SampleAccountAnalyzer:
             'time_range_days': self.activity_time_range_days
         }
         
-        # 分桶统计
+        # bucket statistics
         buckets = self._create_buckets(
             activity_counts,
             [(0, 0), (1, 10), (11, 50), (51, 100), (101, 500), (501, 1000), (1001, float('inf'))],
@@ -281,15 +271,15 @@ class SampleAccountAnalyzer:
         )
         stats['activity_count_buckets'] = buckets
         
-        print(f"  ✓ 平均每个人员 {stats['avg_activities_per_person']} 个活动")
+        print(f"  ✓ average {stats['avg_activities_per_person']} activities per person")
         
         return stats
     
     def analyze_activity_types(self, account_ids: List[int]) -> Dict:
         """
-        分析指定账户的活动类型分布
+        analyze the distribution of activity types in specified accounts
         """
-        print(f"\n分析样本账户的活动类型分布...")
+        print(f"\nanalyze {len(account_ids)} accounts' activity type distribution...")
         
         ids_str = ','.join(str(id) for id in account_ids)
         
@@ -317,14 +307,14 @@ class SampleAccountAnalyzer:
         
         activity_types = [
             {
-                'type_category': 'type_' + str(i),  # 不暴露实际类型名
+                'type_category': 'type_' + str(i),  # do not expose actual type names
                 'count': row['count'],
                 'percentage': round(row['percentage'], 2)
             }
             for i, row in enumerate(result)
         ]
         
-        print(f"  ✓ 发现 {len(activity_types)} 种活动类型")
+        print(f"  ✓ found {len(activity_types)} activity types")
         
         return {
             'activity_type_distribution': activity_types,
@@ -333,9 +323,9 @@ class SampleAccountAnalyzer:
     
     def analyze_list_membership(self, account_ids: List[int]) -> Dict:
         """
-        分析指定账户的列表成员关系
+        analyze the list membership relationship in specified accounts
         """
-        print(f"\n分析样本账户的列表成员关系...")
+        print(f"\nanalyze {len(account_ids)} accounts' list membership relationship...")
         
         ids_str = ','.join(str(id) for id in account_ids)
         
@@ -350,7 +340,7 @@ class SampleAccountAnalyzer:
         
         result = self.execute_query(query)
         
-        # 构建统计
+        # build statistics for each account
         account_list_map = {row['account_id']: row['list_count'] for row in result}
         
         list_counts = []
@@ -369,13 +359,13 @@ class SampleAccountAnalyzer:
             'std_lists_per_account': round(self._calculate_std(list_counts), 2) if list_counts else 0
         }
         
-        print(f"  ✓ 平均每个账户在 {stats['avg_lists_per_account']} 个列表中")
-        print(f"  ✓ {stats['accounts_not_in_lists']} 个账户不在任何列表中")
+        print(f"  ✓ average {stats['avg_lists_per_account']} lists per account")
+        print(f"  ✓ {stats['accounts_not_in_lists']} accounts not in any lists")
         
         return stats
     
     def _calculate_std(self, values: List[float]) -> float:
-        """计算标准差"""
+        """calculate standard deviation"""
         if not values or len(values) < 2:
             return 0.0
         
@@ -385,10 +375,10 @@ class SampleAccountAnalyzer:
     
     def _create_buckets(self, values: List[int], ranges: List[tuple], labels: List[str]) -> List[Dict]:
         """
-        创建分桶统计
-        :param values: 数值列表
-        :param ranges: 范围列表 [(min, max), ...]
-        :param labels: 标签列表
+        create bucket statistics
+        :param values: value list
+        :param ranges: range list [(min, max), ...]
+        :param labels: label list
         """
         buckets = {label: 0 for label in labels}
         
@@ -409,133 +399,127 @@ class SampleAccountAnalyzer:
         ]
     
     def run(self, output_file: str = 'sample_account_analysis.json'):
-        """执行完整的样本分析"""
+        """execute sample analysis"""
         try:
             self.connect()
             
             print("\n" + "="*80)
-            print("样本账户关系分析工具")
+            print("sample account relationship analyzer")
             print("="*80)
-            print(f"\n配置:")
-            print(f"  - 样本大小: {self.sample_size} 个账户")
-            print(f"  - 活动时间范围: 最近 {self.activity_time_range_days} 天")
-            print(f"  - 采样方法: {'指定ID' if self.account_ids else '随机采样'}")
+            print(f"\nconfiguration:")
+            print(f"  - sample size: {self.sample_size} accounts")
+            print(f"  - activity time range: last {self.activity_time_range_days} days")
+            print(f"  - sampling method: {'specified ID' if self.account_ids else 'random sampling'}")
             
-            # 步骤1: 获取样本账户ID
+            # step 1: get sample account IDs
             account_ids = self.get_sample_account_ids()
             self.results['metadata']['actual_sample_size'] = len(account_ids)
             self.results['metadata']['account_ids_sample'] = account_ids
             
-            # 步骤2: 分析account-person关系
+            # step 2: analyze account-person relationship
             person_stats = self.analyze_account_person_counts(account_ids)
             self.results['aggregated_stats']['account_person'] = person_stats
             
-            # 步骤3: 分析account-activity关系
+            # step 3: analyze account-activity relationship
             activity_stats = self.analyze_account_activity_counts(account_ids)
             self.results['aggregated_stats']['account_activity'] = activity_stats
             
-            # 步骤4: 分析person-activity关系
+            # step 4: analyze person-activity relationship
             person_activity_stats = self.analyze_person_activity_counts(account_ids)
             self.results['aggregated_stats']['person_activity'] = person_activity_stats
             
-            # 步骤5: 分析列表成员关系
+            # step 5: analyze list membership relationship
             list_stats = self.analyze_list_membership(account_ids)
             self.results['aggregated_stats']['account_list'] = list_stats
             
-            # 步骤6: 分析活动类型分布
+            # step 6: analyze activity type distribution
             type_stats = self.analyze_activity_types(account_ids)
             self.results['aggregated_stats']['activity_types'] = type_stats
             
-            # 保存结果
+            # save results
             self.save_results(output_file)
             
-            # 打印总结
+            # print summary
             self.print_summary()
             
         except Exception as e:
-            print(f"\n✗ 分析过程失败: {e}")
+            print(f"\n✗ analyze process failed: {e}, {traceback.format_exc()}")
             raise
         finally:
             self.close()
     
     def save_results(self, output_file: str):
-        """保存分析结果"""
+        """save analysis results"""
         output_path = os.path.join(os.path.dirname(__file__), output_file)
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(self.results, f, indent=2, ensure_ascii=False, cls=DecimalEncoder)
-        print(f"\n✓ 分析结果已保存到: {output_path}")
+        print(f"\n✓ analysis results saved to: {output_path}")
     
     def print_summary(self):
-        """打印分析摘要"""
+        """print analysis summary"""
         print("\n" + "="*80)
-        print("分析结果摘要")
+        print("analysis summary")
         print("="*80)
         
         stats = self.results['aggregated_stats']
         
         if 'account_person' in stats:
-            print(f"\nAccount-Person 关系:")
-            print(f"  - 样本账户数: {stats['account_person']['sample_size']}")
-            print(f"  - 平均人员数: {stats['account_person']['avg_persons_per_account']}")
-            print(f"  - 标准差: {stats['account_person']['std_persons_per_account']}")
-            print(f"  - 范围: {stats['account_person']['min_persons_per_account']} - {stats['account_person']['max_persons_per_account']}")
+            print(f"\naccount-person relationship:")
+            print(f"  - sample account size: {stats['account_person']['sample_size']}")
+            print(f"  - average persons per account: {stats['account_person']['avg_persons_per_account']}")
+            print(f"  - standard deviation: {stats['account_person']['std_persons_per_account']}")
+            print(f"  - range: {stats['account_person']['min_persons_per_account']} - {stats['account_person']['max_persons_per_account']}")
         
         if 'account_activity' in stats:
-            print(f"\nAccount-Activity 关系 (最近{self.activity_time_range_days}天):")
-            print(f"  - 样本账户数: {stats['account_activity']['sample_size']}")
-            print(f"  - 平均活动数: {stats['account_activity']['avg_activities_per_account']}")
-            print(f"  - 标准差: {stats['account_activity']['std_activities_per_account']}")
-            print(f"  - 范围: {stats['account_activity']['min_activities_per_account']} - {stats['account_activity']['max_activities_per_account']}")
+            print(f"\naccount-activity relationship (last {self.activity_time_range_days} days):")
+            print(f"  - sample account size: {stats['account_activity']['sample_size']}")
+            print(f"  - activities per account: {stats['account_activity']['avg_activities_per_account']}")
+            print(f"  - standard deviation: {stats['account_activity']['std_activities_per_account']}")
+            print(f"  - range: {stats['account_activity']['min_activities_per_account']} - {stats['account_activity']['max_activities_per_account']}")
         
         if 'person_activity' in stats:
-            print(f"\nPerson-Activity 关系 (最近{self.activity_time_range_days}天):")
-            print(f"  - 样本人员数: {stats['person_activity']['sample_persons']}")
-            print(f"  - 平均活动数: {stats['person_activity']['avg_activities_per_person']}")
-            print(f"  - 标准差: {stats['person_activity']['std_activities_per_person']}")
+            print(f"\nperson-activity relationship (last {self.activity_time_range_days} days):")
+            print(f"  - sample person size: {stats['person_activity']['sample_persons']}")
+            print(f"  - average activities per person: {stats['person_activity']['avg_activities_per_person']}")
+            print(f"  - standard deviation: {stats['person_activity']['std_activities_per_person']}")
         
         if 'account_list' in stats:
-            print(f"\nAccount-List 成员关系:")
-            print(f"  - 样本账户数: {stats['account_list']['sample_size']}")
-            print(f"  - 平均列表数: {stats['account_list']['avg_lists_per_account']}")
-            print(f"  - 未加入列表: {stats['account_list']['accounts_not_in_lists']} 个账户")
+            print(f"\naccount-list membership relationship:")
+            print(f"  - sample account size: {stats['account_list']['sample_size']}")
+            print(f"  - average lists per account: {stats['account_list']['avg_lists_per_account']}")
+            print(f"  - accounts not in lists: {stats['account_list']['accounts_not_in_lists']} accounts")
         
         print("\n" + "="*80)
 
 
 def main():
-    """主函数"""
-    # 从环境变量读取账户ID（如果有的话）
+    """main function"""
+    # read account IDs from environment variable (if any)
     account_ids_str = os.getenv('ACCOUNT_IDS', '')
     account_ids = []
     if account_ids_str:
-        # 支持逗号分隔的账户ID列表
         account_ids = [int(aid.strip()) for aid in account_ids_str.split(',') if aid.strip()]
-        print(f"从环境变量读取到 {len(account_ids)} 个账户ID")
+        print(f"read {len(account_ids)} account IDs from environment variable")
     
-    # 从环境变量读取配置
     config = {
         'host': os.getenv('DB_HOST', 'localhost'),
         'port': int(os.getenv('DB_PORT', '3306')),
         'user': os.getenv('DB_USER', 'root'),
         'password': os.getenv('DB_PASSWORD', ''),
         'database': os.getenv('DB_NAME', 'tenant'),
-        # 采样配置
-        'sample_size': int(os.getenv('SAMPLE_SIZE', '1000')),  # 默认1000个样本
+        'sample_size': int(os.getenv('SAMPLE_SIZE', '1000')),  # default 1000 accounts
         'activity_time_range_days': int(os.getenv('ACTIVITY_TIME_RANGE_DAYS', '90')),
-        # 可选：指定具体的account_id列表
-        'account_ids': account_ids  # 留空则随机采样
+        'account_ids': account_ids  # optional: specify specific account IDs, leave blank for random sampling
     }
     
     print("="*80)
-    print("样本账户关系分析工具")
+    print("sample account relationship analyzer")
     print("="*80)
     print("\n特点:")
-    print("  - 只分析指定的样本账户，避免大表JOIN")
-    print("  - 使用 IN 子句精确定位，性能高")
-    print("  - 对生产环境影响极小")
-    print("  - 可以随机采样或指定账户ID")
+    print("  - only analyze specified sample accounts, avoid big table JOIN")
+    print("  - use IN clause to precisely locate, high performance")
+    print("  - can random sample or specify account IDs")
     
-    # 创建分析器并运行
     analyzer = SampleAccountAnalyzer(config)
     analyzer.run('sample_account_analysis.json')
 
