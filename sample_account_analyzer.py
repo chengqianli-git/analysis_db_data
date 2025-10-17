@@ -191,8 +191,8 @@ class SampleAccountAnalyzer:
         
         result = self.execute_query(query)
         
-        # build statistics for each account
-        account_activity_map = {row['account_id']: row['activity_count'] for row in result}
+        # build statistics for each account (convert Decimal to int)
+        account_activity_map = {row['account_id']: int(row['activity_count']) for row in result}
         
         # accounts with 0 activities
         activity_counts = []
@@ -265,8 +265,7 @@ class SampleAccountAnalyzer:
         
         result = self.execute_query(query)
         
-        # build statistics for each person
-        person_activity_map = {row['person_id']: row['activity_count'] for row in result}
+        person_activity_map = {row['person_id']: int(row['activity_count']) for row in result}
         
         activity_counts = []
         for pid in person_ids:
@@ -388,6 +387,8 @@ class SampleAccountAnalyzer:
         """calculate standard deviation"""
         if not values or len(values) < 2:
             return 0.0
+        
+        values = [float(v) for v in values]
         
         mean = sum(values) / len(values)
         variance = sum((x - mean) ** 2 for x in values) / len(values)
