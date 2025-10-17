@@ -32,6 +32,7 @@ class SampleAccountAnalyzer:
         self.connection = None
         self.sample_size = config.get('sample_size', 50)  # default 50 accounts
         self.activity_time_range_days = config.get('activity_time_range_days', 90)
+        self.activity_sample_rate = config.get('activity_sample_rate', 0.01)  # default 1% sampling for activity queries
         self.account_ids = config.get('account_ids', [])  # optional: specify specific account IDs, leave blank for random sampling
         
         self.results = {
@@ -39,6 +40,7 @@ class SampleAccountAnalyzer:
                 'database': config.get('database', 'unknown'),
                 'sample_size': self.sample_size,
                 'activity_time_range_days': self.activity_time_range_days,
+                'activity_sample_rate': self.activity_sample_rate,
                 'sampling_method': 'specified_ids' if self.account_ids else 'random_sample'
             },
             'sample_account_stats': {},
@@ -89,7 +91,26 @@ class SampleAccountAnalyzer:
         
         print(f"random sample {self.sample_size} accounts from account_base table")
         
-        query = f"SELECT id FROM account_base ORDER BY RAND() LIMIT {self.sample_size}"
+        # 先估算总行数，计算采样概率
+        count_query = "SELECT COUNT(*) as total FROM account_base"
+        count_result = self.execute_query(count_query)
+        total_accounts = count_result[0]['total'] if count_result else 0
+        
+        if total_accounts == 0:
+            print("⚠️  account_base表为空")
+            return []
+        
+        # 计算采样概率（略高于目标，确保足够样本）
+        sample_probability = self.sample_size / total_accounts
+        
+        print(f"  ✓ 总账户数: {total_accounts:,}, 采样概率: {sample_probability:.6f}")
+        
+        query = f"""
+        SELECT id 
+        FROM account_base 
+        WHERE RAND() < {sample_probability}
+        LIMIT {self.sample_size}
+        """
         result = self.execute_query(query)
         account_ids = [row['id'] for row in result]
         
@@ -153,17 +174,18 @@ class SampleAccountAnalyzer:
         """
         analyze the number of activities in specified accounts
         """
-        print(f"\nanalyze {len(account_ids)} accounts' activity relationship (last {self.activity_time_range_days} days)...")
+        print(f"\nanalyze {len(account_ids)} accounts' activity relationship (last {self.activity_time_range_days} days, {self.activity_sample_rate*100:.1f}% sample)...")
         
         ids_str = ','.join(str(id) for id in account_ids)
         
         query = f"""
         SELECT 
             account_id,
-            COUNT(*) as activity_count
+            COUNT(*) * {1.0/self.activity_sample_rate} as activity_count
         FROM activity
         WHERE account_id IN ({ids_str})
           AND activity_date >= DATE_SUB(NOW(), INTERVAL {self.activity_time_range_days} DAY)
+          AND RAND() < {self.activity_sample_rate}
         GROUP BY account_id
         """
         
@@ -208,7 +230,7 @@ class SampleAccountAnalyzer:
         """
         analyze the number of activities in specified accounts
         """
-        print(f"\nanalyze {len(account_ids)} accounts' person activity relationship (last {self.activity_time_range_days} days)...")
+        print(f"\nanalyze {len(account_ids)} accounts' person activity relationship (last {self.activity_time_range_days} days, {self.activity_sample_rate*100:.1f}% sample)...")
         
         ids_str = ','.join(str(id) for id in account_ids)
         
@@ -227,16 +249,17 @@ class SampleAccountAnalyzer:
         
         print(f"  ✓ found {len(person_ids)} persons")
         
-        # query the number of activities for these persons
+        # query the number of activities for these persons (with sampling)
         person_ids_str = ','.join(str(id) for id in person_ids)
         
         query = f"""
         SELECT 
             person_id,
-            COUNT(*) as activity_count
+            COUNT(*) * {1.0/self.activity_sample_rate} as activity_count
         FROM activity
         WHERE person_id IN ({person_ids_str})
           AND activity_date >= DATE_SUB(NOW(), INTERVAL {self.activity_time_range_days} DAY)
+          AND RAND() < {self.activity_sample_rate}
         GROUP BY person_id
         """
         
@@ -279,25 +302,19 @@ class SampleAccountAnalyzer:
         """
         analyze the distribution of activity types in specified accounts
         """
-        print(f"\nanalyze {len(account_ids)} accounts' activity type distribution...")
+        print(f"\nanalyze {len(account_ids)} accounts' activity type distribution ({self.activity_sample_rate*100:.1f}% sample)...")
         
         ids_str = ','.join(str(id) for id in account_ids)
         
         query = f"""
         SELECT 
             activityType,
-            COUNT(*) as count,
-            COUNT(*) * 100.0 / (
-                SELECT COUNT(*) 
-                FROM activity 
-                WHERE account_id IN ({ids_str})
-                  AND activity_date >= DATE_SUB(NOW(), INTERVAL {self.activity_time_range_days} DAY)
-                  AND activityType IS NOT NULL
-            ) as percentage
+            COUNT(*) as count
         FROM activity
         WHERE account_id IN ({ids_str})
           AND activity_date >= DATE_SUB(NOW(), INTERVAL {self.activity_time_range_days} DAY)
           AND activityType IS NOT NULL
+          AND RAND() < {self.activity_sample_rate}
         GROUP BY activityType
         ORDER BY count DESC
         LIMIT 20
@@ -305,11 +322,14 @@ class SampleAccountAnalyzer:
         
         result = self.execute_query(query)
         
+        # 计算百分比
+        total_count = sum(row['count'] for row in result)
+        
         activity_types = [
             {
                 'type_category': 'type_' + str(i),  # do not expose actual type names
                 'count': row['count'],
-                'percentage': round(row['percentage'], 2)
+                'percentage': round(row['count'] * 100.0 / total_count, 2) if total_count > 0 else 0
             }
             for i, row in enumerate(result)
         ]
@@ -514,6 +534,7 @@ def main():
         'database': os.getenv('DB_NAME', 'tenant'),
         'sample_size': int(os.getenv('SAMPLE_SIZE', '1000')),  # default 1000 accounts
         'activity_time_range_days': int(os.getenv('ACTIVITY_TIME_RANGE_DAYS', '90')),
+        'activity_sample_rate': float(os.getenv('ACTIVITY_SAMPLE_RATE', '0.01')),  # default 1% sampling for activity queries
         'account_ids': account_ids  # optional: specify specific account IDs, leave blank for random sampling
     }
     
