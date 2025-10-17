@@ -55,20 +55,20 @@ else
 fi
 
 echo ""
-echo "========================================== step 2/2: run data relationship analysis ==========================================\n"
-python3 data_relationship_analyzer.py
+echo "========================================== step 2/2: run sample account relationship analysis ==========================================\n"
+python3 sample_account_analyzer.py
 
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✓ data relationship analysis completed"
+    echo "✓ sample account relationship analysis completed"
     # move output file to output directory
-    if [ -f "data_relationship_analysis.json" ]; then
-        mv data_relationship_analysis.json "$OUTPUT_DIR/"
-        echo "  result file: $OUTPUT_DIR/data_relationship_analysis.json"
+    if [ -f "sample_account_analysis.json" ]; then
+        mv sample_account_analysis.json "$OUTPUT_DIR/"
+        echo "  result file: $OUTPUT_DIR/sample_account_analysis.json"
     fi
 else
     echo ""
-    echo "❌ data relationship analysis failed"
+    echo "❌ sample account relationship analysis failed"
     exit 1
 fi
 
@@ -79,7 +79,7 @@ echo "=========================================="
 echo ""
 echo "output files located at: $OUTPUT_DIR/"
 echo "  - production_data_profile.json (data feature analysis)"
-echo "  - data_relationship_analysis.json (data relationship analysis)"
+echo "  - sample_account_analysis.json (sample account relationship analysis)"
 echo "" 
 echo "next step:"
 echo "  1. check the output JSON files"
