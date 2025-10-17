@@ -403,9 +403,6 @@ class SampleAccountAnalyzer:
         try:
             self.connect()
             
-            print("\n" + "="*80)
-            print("sample account relationship analyzer")
-            print("="*80)
             print(f"\nconfiguration:")
             print(f"  - sample size: {self.sample_size} accounts")
             print(f"  - activity time range: last {self.activity_time_range_days} days")
@@ -520,9 +517,6 @@ def main():
         'account_ids': account_ids  # optional: specify specific account IDs, leave blank for random sampling
     }
     
-    print("="*80)
-    print("sample account relationship analyzer")
-    print("="*80)
     print("\nfeatures:")
     print("  - can random sample or specify account IDs")
     
