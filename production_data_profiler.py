@@ -468,7 +468,6 @@ class ProductionDataProfiler:
 
         for table_name, table_data in self.results['tables'].items():
             report.append(f"\ntable: {table_name}")
-            report.append(f"  - row count: {table_data['row_count']:,}")
             report.append(f"  - column count: {table_data['column_count']}")
         
         report.append("\n" + "="*60)
